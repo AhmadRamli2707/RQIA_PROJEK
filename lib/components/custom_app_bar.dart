@@ -41,7 +41,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
         if (showDownloadButton)
           IconButton(
             tooltip: 'Unduh Data',
-            icon: const Icon(Icons.download),
+            icon: const Icon(Icons.replay_circle_filled),
             onPressed: onDownload,
             color: Colors.white,
           ),

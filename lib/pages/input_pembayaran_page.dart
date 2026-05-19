@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../data/models/jenis_pembayaran_model.dart';
 import '../data/models/siswa_model.dart';
-import '../data/services/siswa_service.dart';
-import '../data/services/pembayaran_service.dart';
 import '../data/services/local_storage_service.dart';
+import '../data/services/pembayaran_service.dart';
+import '../data/services/siswa_service.dart';
 import '../components/custom_app_bar.dart';
 
 class InputPembayaranPage extends StatefulWidget {
@@ -26,12 +27,16 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
 
   final TextEditingController nominalController = TextEditingController();
   final TextEditingController tanggalController = TextEditingController();
+  final TextEditingController tahunController = TextEditingController();
 
   List<SiswaModel> siswaList = [];
+  List<JenisPembayaranModel> jenisPembayaranList = [];
   SiswaModel? siswaDipilih;
+  JenisPembayaranModel? jenisPembayaranDipilih;
 
   String? bulanDipilih;
   String? metodeDipilih;
+  int autocompleteResetKey = 0;
 
   final List<String> bulanList = [
     'AGST',
@@ -53,19 +58,85 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
     'Transfer',
   ];
 
+  static const String defaultMetodePembayaran = 'Transfer';
+
   @override
   void initState() {
     super.initState();
+    setDefaultTanggalBulanTahun();
+    metodeDipilih = defaultMetodePembayaran;
     loadCachedData();
+  }
+
+  void setDefaultTanggalBulanTahun() {
+    final now = DateTime.now();
+    tanggalController.text = formatTanggal(now);
+    tahunController.text = now.year.toString();
+    bulanDipilih = getBulanSekarang(now.month);
+  }
+
+  String formatTanggal(DateTime tanggal) {
+    return '${tanggal.year}-${tanggal.month.toString().padLeft(2, '0')}-${tanggal.day.toString().padLeft(2, '0')}';
+  }
+
+  String getBulanSekarang(int month) {
+    const monthMap = {
+      1: 'JAN',
+      2: 'FEB',
+      3: 'MARET',
+      4: 'APRIL',
+      5: 'MEI',
+      6: 'JUNI',
+      7: 'JULI',
+      8: 'AGST',
+      9: 'SEP',
+      10: 'OKT',
+      11: 'NOV',
+      12: 'DES',
+    };
+
+    return monthMap[month] ?? 'JAN';
+  }
+
+  JenisPembayaranModel? getDefaultJenisPembayaran(
+    List<JenisPembayaranModel> data,
+  ) {
+    if (data.isEmpty) {
+      return null;
+    }
+    return data.first;
+  }
+
+  void resetPilihanForm() {
+    setDefaultTanggalBulanTahun();
+    final defaultJenisPembayaran = getDefaultJenisPembayaran(
+      jenisPembayaranList,
+    );
+    nominalController.text = defaultJenisPembayaran?.nominalDefault ?? '';
+    setState(() {
+      siswaDipilih = null;
+      jenisPembayaranDipilih = defaultJenisPembayaran;
+      metodeDipilih = defaultMetodePembayaran;
+      autocompleteResetKey++;
+    });
   }
 
   Future<void> loadCachedData() async {
     try {
+      final masterData = await localStorageService.getMasterData();
       final cachedData = await localStorageService.getSiswaList();
+      final cachedJenisPembayaran = masterData?.jenisPembayaran ?? [];
+      final defaultJenisPembayaran = getDefaultJenisPembayaran(
+        cachedJenisPembayaran,
+      );
       if (!mounted) return;
 
       setState(() {
         siswaList = cachedData;
+        jenisPembayaranList = cachedJenisPembayaran;
+        jenisPembayaranDipilih = defaultJenisPembayaran;
+        nominalController.text = defaultJenisPembayaran?.nominalDefault ?? '';
+        metodeDipilih = defaultMetodePembayaran;
         isLoadingSiswa = false;
       });
     } catch (e) {
@@ -84,13 +155,20 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
 
       final masterData = await siswaService.getMasterData();
       await localStorageService.saveMasterData(masterData);
-      final cachedData = await localStorageService.getSiswaList();
+      final defaultJenisPembayaran = getDefaultJenisPembayaran(
+        masterData.jenisPembayaran,
+      );
 
       if (!mounted) return;
 
       setState(() {
-        siswaList = cachedData;
+        siswaList = masterData.siswa;
+        jenisPembayaranList = masterData.jenisPembayaran;
         siswaDipilih = null;
+        jenisPembayaranDipilih = defaultJenisPembayaran;
+        nominalController.text = defaultJenisPembayaran?.nominalDefault ?? '';
+        metodeDipilih = defaultMetodePembayaran;
+        autocompleteResetKey++;
         isRefreshingSiswa = false;
       });
 
@@ -127,6 +205,15 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
       return;
     }
 
+    if (jenisPembayaranDipilih == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Silakan pilih jenis pembayaran dari daftar'),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       isSaving = true;
     });
@@ -135,9 +222,9 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
       await pembayaranService.tambahPembayaran(
         idSiswa: siswaDipilih!.idSiswa,
         namaSiswa: siswaDipilih!.namaSiswa,
-        idJenis: '1',
+        idJenis: jenisPembayaranDipilih!.idJenis,
         bulan: bulanDipilih!,
-        tahun: DateTime.now().year.toString(),
+        tahun: tahunController.text.trim(),
         nominal: nominalController.text.trim(),
         tanggalBayar: tanggalController.text.trim(),
         metode: metodeDipilih!,
@@ -154,14 +241,7 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
         ),
       );
 
-      nominalController.clear();
-      tanggalController.clear();
-
-      setState(() {
-        siswaDipilih = null;
-        bulanDipilih = null;
-        metodeDipilih = null;
-      });
+      resetPilihanForm();
     } catch (e) {
       if (!mounted) return;
 
@@ -180,16 +260,18 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
   }
 
   Future<void> pilihTanggal() async {
+    final tanggalAwal =
+        DateTime.tryParse(tanggalController.text.trim()) ?? DateTime.now();
+
     final DateTime? tanggal = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
+      initialDate: tanggalAwal,
       firstDate: DateTime(2023),
       lastDate: DateTime(2030),
     );
 
     if (tanggal != null) {
-      tanggalController.text =
-          '${tanggal.year}-${tanggal.month.toString().padLeft(2, '0')}-${tanggal.day.toString().padLeft(2, '0')}';
+      tanggalController.text = formatTanggal(tanggal);
     }
   }
 
@@ -197,6 +279,7 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
   void dispose() {
     nominalController.dispose();
     tanggalController.dispose();
+    tahunController.dispose();
     super.dispose();
   }
 
@@ -208,6 +291,7 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
     }
 
     return Autocomplete<SiswaModel>(
+      key: ValueKey('autocomplete_siswa_$autocompleteResetKey'),
       displayStringForOption: (SiswaModel siswa) {
         return siswa.namaSiswa;
       },
@@ -296,40 +380,6 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
     );
   }
 
-  Widget buildInfoSiswaDipilih() {
-    if (siswaDipilih == null) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.green.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.green.shade200,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Siswa Dipilih',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text('ID Siswa: ${siswaDipilih!.idSiswa}'),
-          Text('Nama: ${siswaDipilih!.namaSiswa}'),
-          Text('Kelas: ${siswaDipilih!.kelas}'),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -354,7 +404,33 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
               child: Column(
                 children: [
                   buildAutocompleteSiswa(),
-                  buildInfoSiswaDipilih(),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<JenisPembayaranModel>(
+                    value: jenisPembayaranDipilih,
+                    decoration: const InputDecoration(
+                      labelText: 'Jenis Pembayaran',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.receipt_long),
+                    ),
+                    items: jenisPembayaranList.map((jenisPembayaran) {
+                      return DropdownMenuItem<JenisPembayaranModel>(
+                        value: jenisPembayaran,
+                        child: Text(jenisPembayaran.namaPembayaran),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        jenisPembayaranDipilih = value;
+                        nominalController.text = value?.nominalDefault ?? '';
+                      });
+                    },
+                    validator: (value) {
+                      if (value == null) {
+                        return 'Pilih jenis pembayaran';
+                      }
+                      return null;
+                    },
+                  ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: bulanDipilih,
@@ -377,6 +453,23 @@ class _InputPembayaranPageState extends State<InputPembayaranPage> {
                     validator: (value) {
                       if (value == null) {
                         return 'Pilih bulan pembayaran';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: tahunController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Tahun Pembayaran',
+                      hintText: 'Contoh: 2026',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.event_note),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Tahun pembayaran wajib diisi';
                       }
                       return null;
                     },

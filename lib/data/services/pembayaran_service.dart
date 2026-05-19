@@ -40,8 +40,18 @@ class PembayaranService {
       }),
     );
 
+    // Google Apps Script kadang membalas redirect setelah POST,
+    // walau data sebenarnya sudah berhasil diproses.
+    if (response.isRedirect) {
+      return;
+    }
+
     if (response.statusCode != 200) {
       throw Exception('Gagal terhubung ke server: ${response.statusCode}');
+    }
+
+    if (response.body.trim().isEmpty) {
+      return;
     }
 
     final result = jsonDecode(response.body);
